@@ -1,56 +1,80 @@
 import os
 import re
 import sys
-import matplotlib.pyplot as plt
+import argparse
+
+from matplotlib import pyplot as plt
+from matplotlib import animation
+from matplotlib import style
 
 LOSS_MIN = 0.1
 LOSS_MAX = 0.3
 STEP_MAX = 90000
-DRAW_RATE = 3 # secs
+LR_MULT = 10000 # learning rate multiplyer
 
 
-def main(log_file_path, graph_title=None):
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("log_file_path", type=str, help="path to the log file to plot")
+    parser.add_argument("-g", "--graph_title", type=str, default=None, help="title of the graph, default: the log file's name")
+    parser.add_argument("-i", "--interval", type=int, default=3000, help="plotting interval, unit: ms, default: 3000")
+    parser.add_argument("-d", "--dark_mode", action="store_true", help="dark mode turns on")
+    args = parser.parse_args()
+
+    log_file_path = args.log_file_path
+    graph_title = args.graph_title
+    draw_rate = args.interval
+    if args.dark_mode:
+        style.use('dark_background')
     if graph_title is None:
         graph_title = os.path.basename(log_file_path)
-    draw(log_file_path, graph_title)
+    plot(log_file_path, graph_title, draw_rate)
 
 
-def draw(log_file_path, graph_title, xmax=STEP_MAX, loss_min=LOSS_MIN, loss_max=LOSS_MAX, draw_rate=DRAW_RATE, lr_mult=10000):
-    plt.ion()
+def plot(log_file_path, graph_title, draw_rate, lr_mult=LR_MULT):
     fig = plt.figure()
-    ax1 = fig.add_subplot(111)
-    ax1.set_ylabel("Loss")
-    ax1.set_ylim(loss_min, loss_max)
-    ax1.set_xlim(0, xmax)
-    bx1 = ax1.twinx()
-    bx1.set_ylabel("Learning rate (x%s)" % lr_mult)
-    
-    while(True):
+    ani = plot_iteratively(fig, log_file_path, draw_rate, lr_mult)
+
+    plt.title(graph_title, fontsize=15)
+    plt.grid(True)
+    plt.subplots_adjust(left=0.12, right=0.85)
+    plt.show()
+
+
+def plot_iteratively(fig, log_file_path, draw_rate, lr_mult):
+    ax1, ax2 = draw_init(fig, lr_mult)
+
+    def animate(i, *fargs):
         with open(log_file_path, 'r') as log_file:
             lines = log_file.read()
-        
-        draw_once(lines, graph_title, ax1, bx1, lr_mult)
-        plt.pause(draw_rate)
-        
+        draw_once(lines, ax1, ax2, lr_mult)
         if is_optimization_done(lines):
             sys.exit()
 
+    return animation.FuncAnimation(fig, animate, interval=draw_rate)
 
-def draw_once(lines, graph_title, ax1, bx1, lr_mult):
+
+def draw_init(fig, lr_mult, xmax=STEP_MAX, loss_min=LOSS_MIN, loss_max=LOSS_MAX):
+    ax1 = fig.add_subplot(1, 1, 1)
+    ax1.set_xlim(0, xmax)
+    ax1.set_ylabel("Loss")
+    ax1.set_ylim(loss_min, loss_max)
+    ax1.set_xlabel("iteration")
+    ax2 = ax1.twinx()
+    ax2.set_ylabel("Learning rate (x%s)" % lr_mult)
+    ax2.set_ylim(0, 1)
+
+    return ax1, ax2
+
+def draw_once(lines, ax1, ax2, lr_mult, color_loss='r', color_lr='g'):
     iter_list, loss_list, lr_list, aux1_list, aux2_list = parse_to_list(lines)
      
-    loss_plot, = ax1.plot(iter_list, loss_list, 'r', label="total_loss")
-
+    loss_plot, = ax1.plot(iter_list, loss_list, color_loss, label="total_loss")
+    
     lr_list = [x*lr_mult for x in lr_list]
-    lr_plot, = bx1.plot(iter_list, lr_list, 'g', label="learning_rate")
+    lr_plot, = ax2.plot(iter_list, lr_list, color_lr, label="learning_rate")
     
     plt.legend([loss_plot, lr_plot], ["loss", "lr"])
-    plt.title(graph_title)
-    plt.xlabel("iteration")
-    plt.grid(True)
-    plt.subplots_adjust(left=0.12, right=0.85)
-
-    plt.show()
 
 
 def parse_to_list(lines):
@@ -99,8 +123,4 @@ def is_optimization_done(lines):
 
 
 if __name__=="__main__":
-    if len(sys.argv) == 1:
-        DIR = os.path.join(os.getcwd(), "pspnet473_cityscapes_iter90000.log")
-    else:
-        DIR = sys.argv[1]
-    main(DIR)
+    main()
