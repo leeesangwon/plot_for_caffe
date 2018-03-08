@@ -1,38 +1,48 @@
 import os
 import re
+import sys
 import matplotlib.pyplot as plt
 
 LOSS_MIN = 0.1
-LOSS_MAX = 0.5
+LOSS_MAX = 0.3
+STEP_MAX = 90000
 DRAW_RATE = 3 # secs
 
 
 def main(log_file_path, graph_title=None):
     if graph_title is None:
         graph_title = os.path.basename(log_file_path)
+    draw(log_file_path, graph_title)
+
+
+def draw(log_file_path, graph_title, xmax=STEP_MAX, loss_min=LOSS_MIN, loss_max=LOSS_MAX, draw_rate=DRAW_RATE, lr_mult=10000):
+    plt.ion()
+    fig = plt.figure()
+    ax1 = fig.add_subplot(111)
+    ax1.set_ylabel("Loss")
+    ax1.set_ylim(loss_min, loss_max)
+    ax1.set_xlim(0, xmax)
+    bx1 = ax1.twinx()
+    bx1.set_ylabel("Learning rate (x%s)" % lr_mult)
     
     while(True):
         with open(log_file_path, 'r') as log_file:
             lines = log_file.read()
         
-        draw_once(lines, graph_title)
-
+        draw_once(lines, graph_title, ax1, bx1, lr_mult)
+        plt.pause(draw_rate)
+        
         if is_optimization_done(lines):
-            break
+            sys.exit()
 
 
-def draw_once(lines, graph_title, loss_min=LOSS_MIN, loss_max=LOSS_MAX, draw_rate=DRAW_RATE):
+def draw_once(lines, graph_title, ax1, bx1, lr_mult):
     iter_list, loss_list, lr_list, aux1_list, aux2_list = parse_to_list(lines)
-    
-    fig, ax1 = plt.subplots()
-    
+     
     loss_plot, = ax1.plot(iter_list, loss_list, 'r', label="total_loss")
-    ax1.set_ylabel("Loss")
-    plt.ylim(loss_min, loss_max)
 
-    bx1 = ax1.twinx()
+    lr_list = [x*lr_mult for x in lr_list]
     lr_plot, = bx1.plot(iter_list, lr_list, 'g', label="learning_rate")
-    bx1.set_ylabel("Learning rate")
     
     plt.legend([loss_plot, lr_plot], ["loss", "lr"])
     plt.title(graph_title)
@@ -41,8 +51,6 @@ def draw_once(lines, graph_title, loss_min=LOSS_MIN, loss_max=LOSS_MAX, draw_rat
     plt.subplots_adjust(left=0.12, right=0.85)
 
     plt.show()
-    
-    plt.pause(draw_rate)
 
 
 def parse_to_list(lines):
@@ -91,5 +99,8 @@ def is_optimization_done(lines):
 
 
 if __name__=="__main__":
-    DIR = os.path.join(os.getcwd(), "pspnet473_cityscapes_iter90000.log")
+    if len(sys.argv) == 1:
+        DIR = os.path.join(os.getcwd(), "pspnet473_cityscapes_iter90000.log")
+    else:
+        DIR = sys.argv[1]
     main(DIR)
