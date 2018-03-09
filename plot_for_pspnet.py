@@ -20,6 +20,7 @@ def main():
     parser.add_argument("-g", "--graph_title", type=str, default=None, help="title of the graph, default: the log file's name")
     parser.add_argument("-i", "--interval", type=int, default=3000, help="plotting interval(ms), default: 3000")
     parser.add_argument("-d", "--dark_mode", action="store_true", help="turns on the dark mode")
+    parser.add_argument("-q", "--auto_quit", action="store_true", help="quit automatically after optimization done")
     args = parser.parse_args()
 
     log_file_path = args.log_file_path
@@ -27,15 +28,16 @@ def main():
     graph_title = args.graph_title
     draw_rate = args.interval
     comparision_log_file_path = args.comparision
+    auto_quit = args.auto_quit
     if args.dark_mode:
         style.use('dark_background')
     if graph_title is None:
         graph_title = os.path.basename(log_file_path)
     
-    plot(log_file_path, comparision_log_file_path, graph_title, draw_rate)
+    plot(log_file_path, comparision_log_file_path, graph_title, draw_rate, auto_quit)
 
 
-def plot(log_file_path, comparision_log_file_path, graph_title, draw_rate, lr_mult=LR_MULT):
+def plot(log_file_path, comparision_log_file_path, graph_title, draw_rate, auto_quit, lr_mult=LR_MULT):
     fig = plt.figure()
     ax1, ax2 = draw_init(fig, lr_mult)
     
@@ -73,7 +75,7 @@ def plot(log_file_path, comparision_log_file_path, graph_title, draw_rate, lr_mu
             with open(log_file_path, 'r') as log_file:
                 lines = log_file.read()
             draw_once(lines, loss_plot, lr_plot, lr_mult)
-            if is_optimization_done(lines):
+            if is_optimization_done(lines) and auto_quit:
                 sys.exit()
 
         return animation.FuncAnimation(fig, animate, interval=draw_rate)
