@@ -1,7 +1,7 @@
-import os
-import re
-import sys
-import argparse
+from __future__ import print_function 
+
+import sys, os
+import re, argparse
 
 from matplotlib import pyplot as plt
 from matplotlib import animation
@@ -42,13 +42,17 @@ def plot(log_file_path, comparision_log_file_path, graph_title, draw_rate, lr_mu
     loss_plot, = ax1.plot([], [], 'C1', label="total_loss")
     lr_plot, = ax2.plot([], [], 'C2', label='learning_rate')
     
-    if comparision_log_file_path is None:
-        plt.legend([loss_plot, lr_plot], ["loss", "lr"])
-    elif os.path.isfile(comparision_log_file_path):
+    lines = [loss_plot, lr_plot]
+    labels = ["loss", "lr"]
+    try:
+        assert os.path.isfile(comparision_log_file_path), "no comparision file at %s" % comparision_log_file_path
         comparision_loss_plot, = ax1.plot([], [], 'C3--', label="comparision_loss")
         comparision_lr_plot, = ax2.plot([], [], 'C4--', label="comparision_lr")
 
-        plt.legend([loss_plot, lr_plot, comparision_loss_plot, comparision_lr_plot], ["loss", "lr", "comp_loss", "comp_lr"])
+        lines.append(comparision_loss_plot)
+        labels.append("comp_loss")
+        lines.append(comparision_lr_plot)
+        labels.append("comp_lr")
 
         def plot_comparision():
             with open(comparision_log_file_path, 'r') as log_file:
@@ -56,9 +60,13 @@ def plot(log_file_path, comparision_log_file_path, graph_title, draw_rate, lr_mu
             draw_once(lines, comparision_loss_plot, comparision_lr_plot, lr_mult)
         
         plot_comparision()
-    else:
-        print("no comparision file at %s" % comparision_log_file_path)
-        plt.legend([loss_plot, lr_plot], ["loss", "lr"])
+    except AssertionError as e:
+        print(e)
+    except TypeError:
+        pass
+
+    assert len(lines) == len(labels), "the number of lines to plot and labels are different, # of lines: %s, # of labels: %s" % (len(lines), len(labels))
+    plt.legend(lines, labels)
 
     def plot_iteratively():
         def animate(frame):
