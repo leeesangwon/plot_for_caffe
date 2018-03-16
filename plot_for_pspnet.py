@@ -1,8 +1,7 @@
 from __future__ import print_function 
 
 import sys, os
-import re, argparse, subprocess, threading
-
+import re, argparse, subprocess
 from datetime import datetime, timedelta
 
 from matplotlib import pyplot as plt
