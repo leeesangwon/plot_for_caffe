@@ -30,7 +30,7 @@ ARGS = PARSER.parse_args()
 
 def main():
     log_file_path = ARGS.log_file_path
-    assert os.path.isfile(log_file_path), "there is no log file at %s" % log_file_path
+    assert os.path.isfile(log_file_path), str(datetime.now()) + " ERROR: there is no log file at %s" % log_file_path
     graph_title = ARGS.graph_title
     comparision_log_file_path = ARGS.comparision
     slack_alert = ARGS.slack_alert
@@ -52,7 +52,7 @@ def plot(log_file_path, comparision_log_file_path, graph_title, slack_alert, lr_
     lines = [loss_plot, lr_plot]
     labels = ["loss", "lr"]
     try:
-        assert os.path.isfile(comparision_log_file_path), "no comparision file at %s" % comparision_log_file_path
+        assert os.path.isfile(comparision_log_file_path), str(datetime.now()) + " WARNING: no comparision file at %s" % comparision_log_file_path
         comparision_loss_plot, = ax1.plot([], [], 'C3--', label="comparision_loss")
         comparision_lr_plot, = ax2.plot([], [], 'C4--', label="comparision_lr")
 
@@ -72,7 +72,7 @@ def plot(log_file_path, comparision_log_file_path, graph_title, slack_alert, lr_
     except TypeError:
         pass
 
-    assert len(lines) == len(labels), "the number of lines to plot and labels are different, # of lines: %s, # of labels: %s" % (len(lines), len(labels))
+    assert len(lines) == len(labels), str(datetime.now()) + " ERROR: the number of lines to plot and labels are different, # of lines: %s, # of labels: %s" % (len(lines), len(labels))
     plt.legend(lines, labels)
 
     def plot_iteratively():
@@ -185,9 +185,12 @@ def is_optimization_done(lines):
 
 def send_message_to_slack(title, body):
     def send_message(title, body):
-        result = subprocess.check_output("curl -F token=%s -F channel=#%s -F text=\"*%s* %s\" https://slack.com/api/chat.postMessage"
-                                         % (BOT_TOKEN, CHANNEL, title, body), shell=True)
-        assert re.search(r'"ok":true', result), "cannot send message to slack"
+        try:
+            result = subprocess.check_output("curl -F token=%s -F channel=#%s -F text=\"*%s* %s\" https://slack.com/api/chat.postMessage"
+                                         % (BOT_TOKEN, CHANNEL, title, body), stderr=subprocess.STDOUT, shell=True)
+        except subprocess.CalledProcessError:
+            raise AssertionError(str(datetime.now()) + " WARNING: cannot send message to slack")
+        assert re.search(r'"ok":true', result), str(datetime.now()) + " WARNING: cannot send message to slack"
         return result
     
     result = send_message(title, body)
@@ -195,14 +198,20 @@ def send_message_to_slack(title, body):
 
 def send_figure_to_slack(title, figure_name):
     def send_figure(title, figure_name):
-        result = subprocess.check_output("curl -F token=%s -F channels=#%s -F title=%s -F file=@%s https://slack.com/api/files.upload"
-                                         % (BOT_TOKEN, CHANNEL, title, figure_name), shell=True)
-        assert re.search(r'"ok":true', result), "cannot send figure to slack"
+        try:
+            result = subprocess.check_output("curl -F token=%s -F channels=#%s -F title=%s -F file=@%s https://slack.com/api/files.upload"
+                                         % (BOT_TOKEN, CHANNEL, title, figure_name), stderr=subprocess.STDOUT, shell=True)
+        except subprocess.CalledProcessError:
+            raise AssertionError(str(datetime.now()) + " WARNING: cannot send figure to slack")
+        assert re.search(r'"ok":true', result), str(datetime.now()) + " WARNING: cannot send figure to slack"
         return result
     
     def delete_last_figure(fid):
-        result = subprocess.check_output("curl -F token=%s -F file=%s https://slack.com/api/files.delete" % (BOT_TOKEN, fid), shell=True)
-        assert re.search(r'"ok":true', result), "cannot delete last figure: %s" % result
+        try:
+            result = subprocess.check_output("curl -F token=%s -F file=%s https://slack.com/api/files.delete" % (BOT_TOKEN, fid), shell=True)
+        except subprocess.CalledProcessError:
+            raise AssertionError(str(datetime.now()) + " WARNING: cannot delete last figure")
+        assert re.search(r'"ok":true', result), str(datetime.now()) + " WARNING: cannot delete last figure: %s" % result
 
     def get_file_id(result):
         targetline = re.search(r'"id":"\w+"', result).group()
