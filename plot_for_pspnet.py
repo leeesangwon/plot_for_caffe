@@ -83,17 +83,26 @@ def plot(log_file_path, comparision_log_file_path, graph_title, slack_alert, lr_
             if ARGS.slack_alert and n_minutes_timer(ARGS.slack_alert):
                 fig = plt.gcf()
                 fig.savefig(temp_figure_image_name)
-                send_figure_to_slack(graph_title, temp_figure_image_name)
+                try:
+                    send_figure_to_slack(graph_title, temp_figure_image_name)
+                except AssertionError as e:
+                    print(e)
                 os.remove(temp_figure_image_name)
             if is_optimization_done(lines):
                 if ARGS.slack_alert:
                     # send figure to slack
                     fig = plt.gcf()
                     fig.savefig(temp_figure_image_name)
-                    send_figure_to_slack(graph_title, temp_figure_image_name)
+                    try:
+                        send_figure_to_slack(graph_title, temp_figure_image_name)
+                    except AssertionError as e:
+                        print(e)
                     os.remove(temp_figure_image_name)
                     # send message to slack
-                    send_message_to_slack(graph_title, 'optimization done')
+                    try:
+                        send_message_to_slack(graph_title, 'optimization done')
+                    except AssertionError as e:
+                        print(e)
                     # not to send message and figure iterativly
                     ARGS.slack_alert = 0
                 if ARGS.auto_quit:
