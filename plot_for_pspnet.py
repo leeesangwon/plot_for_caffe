@@ -1,43 +1,49 @@
 from __future__ import print_function 
 
 import sys, os
-import re, argparse
+import re, argparse, subprocess, threading
+
+from datetime import datetime, timedelta
 
 from matplotlib import pyplot as plt
 from matplotlib import animation
 from matplotlib import style
+
+# for slackbot
+CHANNEL = 'change to your channel'
+BOT_TOKEN = "change to your bot token"
+temp_figure_image_name = "tmp_fig.png"
 
 LOSS_MIN = 0.1
 LOSS_MAX = 0.3
 STEP_MAX = 90000
 LR_MULT = 10000 # learning rate multiplyer
 
+PARSER = argparse.ArgumentParser()
+PARSER.add_argument("log_file_path", type=str, help="path to the log file to plot")
+PARSER.add_argument("-c", "--comparision", type=str, default=None, help="path to the comparision log file to plot, default: not plot")
+PARSER.add_argument("-g", "--graph_title", type=str, default=None, help="title of the graph, default: the log file's name")
+PARSER.add_argument("-i", "--interval", type=int, default=10000, help="plotting interval(ms), default: 10000")
+PARSER.add_argument("-d", "--dark_mode", action="store_true", help="turns on the dark mode")
+PARSER.add_argument("-q", "--auto_quit", action="store_true", help="quit automatically after optimization done")
+PARSER.add_argument("-s", "--slack_alert", type=int, default=0, help="send message after optimization done or figure every SLACK_ALERT minutes to slack, default is 0(not send)")
+ARGS = PARSER.parse_args()
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("log_file_path", type=str, help="path to the log file to plot")
-    parser.add_argument("-c", "--comparision", type=str, default=None, help="path to the comparision log file to plot, default: not plot")
-    parser.add_argument("-g", "--graph_title", type=str, default=None, help="title of the graph, default: the log file's name")
-    parser.add_argument("-i", "--interval", type=int, default=3000, help="plotting interval(ms), default: 3000")
-    parser.add_argument("-d", "--dark_mode", action="store_true", help="turns on the dark mode")
-    parser.add_argument("-q", "--auto_quit", action="store_true", help="quit automatically after optimization done")
-    args = parser.parse_args()
-
-    log_file_path = args.log_file_path
+    log_file_path = ARGS.log_file_path
     assert os.path.isfile(log_file_path), "there is no log file at %s" % log_file_path
-    graph_title = args.graph_title
-    draw_rate = args.interval
-    comparision_log_file_path = args.comparision
-    auto_quit = args.auto_quit
-    if args.dark_mode:
+    graph_title = ARGS.graph_title
+    comparision_log_file_path = ARGS.comparision
+    slack_alert = ARGS.slack_alert
+    if ARGS.dark_mode:
         style.use('dark_background')
     if graph_title is None:
-        graph_title = os.path.basename(log_file_path)
+        graph_title = os.path.basename(log_file_path).replace(".log", "")
     
-    plot(log_file_path, comparision_log_file_path, graph_title, draw_rate, auto_quit)
+    plot(log_file_path, comparision_log_file_path, graph_title, slack_alert)
 
 
-def plot(log_file_path, comparision_log_file_path, graph_title, draw_rate, auto_quit, lr_mult=LR_MULT):
+def plot(log_file_path, comparision_log_file_path, graph_title, slack_alert, lr_mult=LR_MULT):
     fig = plt.figure()
     ax1, ax2 = draw_init(fig, lr_mult)
     
@@ -75,13 +81,29 @@ def plot(log_file_path, comparision_log_file_path, graph_title, draw_rate, auto_
             with open(log_file_path, 'r') as log_file:
                 lines = log_file.read()
             draw_once(lines, loss_plot, lr_plot, lr_mult)
-            if is_optimization_done(lines) and auto_quit:
-                sys.exit()
+            if ARGS.slack_alert and n_minutes_timer(ARGS.slack_alert):
+                fig = plt.gcf()
+                fig.savefig(temp_figure_image_name)
+                send_figure_to_slack(graph_title, temp_figure_image_name)
+                os.remove(temp_figure_image_name)
+            if is_optimization_done(lines):
+                if ARGS.slack_alert:
+                    # send figure to slack
+                    fig = plt.gcf()
+                    fig.savefig(temp_figure_image_name)
+                    send_figure_to_slack(graph_title, temp_figure_image_name)
+                    os.remove(temp_figure_image_name)
+                    # send message to slack
+                    send_message_to_slack(graph_title, 'optimization done')
+                    # not to send message and figure iterativly
+                    ARGS.slack_alert = 0
+                if ARGS.auto_quit:
+                    sys.exit()
 
-        return animation.FuncAnimation(fig, animate, interval=draw_rate)
+        return animation.FuncAnimation(fig, animate, interval=ARGS.interval)
     
     ani = plot_iteratively()
-
+    
     plt.title(graph_title, fontsize=15)
     plt.grid(True)
     plt.subplots_adjust(left=0.12, right=0.85)
@@ -99,6 +121,7 @@ def draw_init(fig, lr_mult, xmax=STEP_MAX, loss_min=LOSS_MIN, loss_max=LOSS_MAX)
     ax2.set_ylim(0, 1)
 
     return ax1, ax2
+
 
 def draw_once(lines, loss_plot, lr_plot, lr_mult):
     iter_list, loss_list, lr_list, _, _ = parse_to_list(lines)
@@ -150,6 +173,51 @@ def is_optimization_done(lines):
     if re_optimization_done.search(lines):
         return True
     return False
+
+
+def send_message_to_slack(title, body):
+    def send_message(title, body):
+        result = subprocess.check_output("curl -F token=%s -F channel=#%s -F text=\"*%s* %s\" https://slack.com/api/chat.postMessage"
+                                         % (BOT_TOKEN, CHANNEL, title, body), shell=True)
+        assert re.search(r'"ok":true', result), "cannot send message to slack"
+        return result
+    
+    result = send_message(title, body)
+
+
+def send_figure_to_slack(title, figure_name):
+    def send_figure(title, figure_name):
+        result = subprocess.check_output("curl -F token=%s -F channels=#%s -F title=%s -F file=@%s https://slack.com/api/files.upload"
+                                         % (BOT_TOKEN, CHANNEL, title, figure_name), shell=True)
+        assert re.search(r'"ok":true', result), "cannot send figure to slack"
+        return result
+    
+    def delete_last_figure(fid):
+        result = subprocess.check_output("curl -F token=%s -F file=%s https://slack.com/api/files.delete" % (BOT_TOKEN, fid), shell=True)
+        assert re.search(r'"ok":true', result), "cannot delete last figure: %s" % result
+
+    def get_file_id(result):
+        targetline = re.search(r'"id":"\w+"', result).group()
+        return re.findall(r'\w+', targetline)[-1]
+    
+    result = send_figure(title, figure_name)
+    try:
+        delete_last_figure(send_figure_to_slack.last_fid)
+    except AttributeError:
+        pass
+    finally:
+        send_figure_to_slack.last_fid = get_file_id(result)
+
+
+def n_minutes_timer(n):
+    try:
+        is_time_to_go = n_minutes_timer.time_to_go < datetime.now()
+    except AttributeError:
+        n_minutes_timer.time_to_go = datetime.now()
+        is_time_to_go = True
+    if is_time_to_go:
+        n_minutes_timer.time_to_go += timedelta(minutes=n)
+    return is_time_to_go
 
 
 if __name__=="__main__":
