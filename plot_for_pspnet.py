@@ -132,7 +132,7 @@ def draw_init(fig, lr_mult, xmax=STEP_MAX, loss_min=LOSS_MIN, loss_max=LOSS_MAX)
 
 
 def draw_once(lines, loss_plot, lr_plot, lr_mult):
-    iter_list, loss_list, lr_list, _, _ = parse_to_list(lines)
+    iter_list, loss_list, lr_list = parse_to_list(lines)
     loss_plot.set_data(iter_list, loss_list)
     lr_list = [x*lr_mult for x in lr_list]
     lr_plot.set_data(iter_list, lr_list)
@@ -142,33 +142,25 @@ def parse_to_list(lines):
     re_iteration_line = re.compile(r"Iteration [\d]+, loss")
     re_total_loss_line = re.compile(r", loss = [\d.]+(e[-+][\d]{2}){0,1}")
     re_learning_rate_line = re.compile(r"lr = [\d.]+(e[-+][\d]{2}){0,1}")
-    re_aux_loss_line_1 = re.compile(r"loss_auxiliary = [\d.]+(e[-+][\d]{2}){0,1}")
-    re_aux_loss_line_2 = re.compile(r"loss_main = [\d.]+(e[-+][\d]{2}){0,1}")
     
     iteration_line = re_iteration_line.finditer(lines)
     total_loss_line = re_total_loss_line.finditer(lines)
     learning_rate_line = re_learning_rate_line.finditer(lines)
-    aux_loss_line_1 = re_aux_loss_line_1.finditer(lines)
-    aux_loss_line_2 = re_aux_loss_line_2.finditer(lines)
 
     iter_list = []
     loss_list = []
     lr_list  = []
-    aux1_list = []
-    aux2_list = []
 
-    for iter_num, loss, lr, aux1, aux2 in zip(
-        iteration_line, total_loss_line, learning_rate_line, aux_loss_line_1, aux_loss_line_2):
+    for iter_num, loss, lr in zip(
+        iteration_line, total_loss_line, learning_rate_line):
         try:
             iter_list.append(line_to_float(iter_num.group()))
             loss_list.append(line_to_float(loss.group()))
             lr_list.append(line_to_float(lr.group()))
-            aux1_list.append(line_to_float(aux1.group()))
-            aux2_list.append(line_to_float(aux2.group()))
         except ValueError:
             pass
     
-    return iter_list, loss_list, lr_list, aux1_list, aux2_list
+    return iter_list, loss_list, lr_list
     
 
 def line_to_float(text):
