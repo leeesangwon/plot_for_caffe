@@ -30,7 +30,7 @@ ARGS = PARSER.parse_args()
 
 def main():
     log_file_path = ARGS.log_file_path
-    assert os.path.isfile(log_file_path), "there is no log file at %s" % log_file_path
+    assert os.path.isfile(log_file_path), str(datetime.now()) + " ERROR: there is no log file at %s" % log_file_path
     graph_title = ARGS.graph_title
     comparision_log_file_path = ARGS.comparision
     slack_alert = ARGS.slack_alert
@@ -52,7 +52,7 @@ def plot(log_file_path, comparision_log_file_path, graph_title, slack_alert, lr_
     lines = [loss_plot, lr_plot]
     labels = ["loss", "lr"]
     try:
-        assert os.path.isfile(comparision_log_file_path), "no comparision file at %s" % comparision_log_file_path
+        assert os.path.isfile(comparision_log_file_path), str(datetime.now()) + " WARNING: no comparision file at %s" % comparision_log_file_path
         comparision_loss_plot, = ax1.plot([], [], 'C3--', label="comparision_loss")
         comparision_lr_plot, = ax2.plot([], [], 'C4--', label="comparision_lr")
 
@@ -72,7 +72,7 @@ def plot(log_file_path, comparision_log_file_path, graph_title, slack_alert, lr_
     except TypeError:
         pass
 
-    assert len(lines) == len(labels), "the number of lines to plot and labels are different, # of lines: %s, # of labels: %s" % (len(lines), len(labels))
+    assert len(lines) == len(labels), str(datetime.now()) + " ERROR: the number of lines to plot and labels are different, # of lines: %s, # of labels: %s" % (len(lines), len(labels))
     plt.legend(lines, labels)
 
     def plot_iteratively():
@@ -83,17 +83,26 @@ def plot(log_file_path, comparision_log_file_path, graph_title, slack_alert, lr_
             if ARGS.slack_alert and n_minutes_timer(ARGS.slack_alert):
                 fig = plt.gcf()
                 fig.savefig(temp_figure_image_name)
-                send_figure_to_slack(graph_title, temp_figure_image_name)
+                try:
+                    send_figure_to_slack(graph_title, temp_figure_image_name)
+                except AssertionError as e:
+                    print(e)
                 os.remove(temp_figure_image_name)
             if is_optimization_done(lines):
                 if ARGS.slack_alert:
                     # send figure to slack
                     fig = plt.gcf()
                     fig.savefig(temp_figure_image_name)
-                    send_figure_to_slack(graph_title, temp_figure_image_name)
+                    try:
+                        send_figure_to_slack(graph_title, temp_figure_image_name)
+                    except AssertionError as e:
+                        print(e)
                     os.remove(temp_figure_image_name)
                     # send message to slack
-                    send_message_to_slack(graph_title, 'optimization done')
+                    try:
+                        send_message_to_slack(graph_title, 'optimization done')
+                    except AssertionError as e:
+                        print(e)
                     # not to send message and figure iterativly
                     ARGS.slack_alert = 0
                 if ARGS.auto_quit:
@@ -123,7 +132,7 @@ def draw_init(fig, lr_mult, xmax=STEP_MAX, loss_min=LOSS_MIN, loss_max=LOSS_MAX)
 
 
 def draw_once(lines, loss_plot, lr_plot, lr_mult):
-    iter_list, loss_list, lr_list, _, _ = parse_to_list(lines)
+    iter_list, loss_list, lr_list = parse_to_list(lines)
     loss_plot.set_data(iter_list, loss_list)
     lr_list = [x*lr_mult for x in lr_list]
     lr_plot.set_data(iter_list, lr_list)
@@ -133,33 +142,25 @@ def parse_to_list(lines):
     re_iteration_line = re.compile(r"Iteration [\d]+, loss")
     re_total_loss_line = re.compile(r", loss = [\d.]+(e[-+][\d]{2}){0,1}")
     re_learning_rate_line = re.compile(r"lr = [\d.]+(e[-+][\d]{2}){0,1}")
-    re_aux_loss_line_1 = re.compile(r"loss_auxiliary = [\d.]+(e[-+][\d]{2}){0,1}")
-    re_aux_loss_line_2 = re.compile(r"loss_main = [\d.]+(e[-+][\d]{2}){0,1}")
     
     iteration_line = re_iteration_line.finditer(lines)
     total_loss_line = re_total_loss_line.finditer(lines)
     learning_rate_line = re_learning_rate_line.finditer(lines)
-    aux_loss_line_1 = re_aux_loss_line_1.finditer(lines)
-    aux_loss_line_2 = re_aux_loss_line_2.finditer(lines)
 
     iter_list = []
     loss_list = []
     lr_list  = []
-    aux1_list = []
-    aux2_list = []
 
-    for iter_num, loss, lr, aux1, aux2 in zip(
-        iteration_line, total_loss_line, learning_rate_line, aux_loss_line_1, aux_loss_line_2):
+    for iter_num, loss, lr in zip(
+        iteration_line, total_loss_line, learning_rate_line):
         try:
             iter_list.append(line_to_float(iter_num.group()))
             loss_list.append(line_to_float(loss.group()))
             lr_list.append(line_to_float(lr.group()))
-            aux1_list.append(line_to_float(aux1.group()))
-            aux2_list.append(line_to_float(aux2.group()))
         except ValueError:
             pass
     
-    return iter_list, loss_list, lr_list, aux1_list, aux2_list
+    return iter_list, loss_list, lr_list
     
 
 def line_to_float(text):
@@ -176,9 +177,12 @@ def is_optimization_done(lines):
 
 def send_message_to_slack(title, body):
     def send_message(title, body):
-        result = subprocess.check_output("curl -F token=%s -F channel=#%s -F text=\"*%s* %s\" https://slack.com/api/chat.postMessage"
-                                         % (BOT_TOKEN, CHANNEL, title, body), shell=True)
-        assert re.search(r'"ok":true', result), "cannot send message to slack"
+        try:
+            result = subprocess.check_output("curl -F token=%s -F channel=#%s -F text=\"*%s* %s\" https://slack.com/api/chat.postMessage"
+                                         % (BOT_TOKEN, CHANNEL, title, body), stderr=subprocess.STDOUT, shell=True)
+        except subprocess.CalledProcessError:
+            raise AssertionError(str(datetime.now()) + " WARNING: cannot send message to slack")
+        assert re.search(r'"ok":true', result), str(datetime.now()) + " WARNING: cannot send message to slack"
         return result
     
     result = send_message(title, body)
@@ -186,14 +190,20 @@ def send_message_to_slack(title, body):
 
 def send_figure_to_slack(title, figure_name):
     def send_figure(title, figure_name):
-        result = subprocess.check_output("curl -F token=%s -F channels=#%s -F title=%s -F file=@%s https://slack.com/api/files.upload"
-                                         % (BOT_TOKEN, CHANNEL, title, figure_name), shell=True)
-        assert re.search(r'"ok":true', result), "cannot send figure to slack"
+        try:
+            result = subprocess.check_output("curl -F token=%s -F channels=#%s -F title=%s -F file=@%s https://slack.com/api/files.upload"
+                                         % (BOT_TOKEN, CHANNEL, title, figure_name), stderr=subprocess.STDOUT, shell=True)
+        except subprocess.CalledProcessError:
+            raise AssertionError(str(datetime.now()) + " WARNING: cannot send figure to slack")
+        assert re.search(r'"ok":true', result), str(datetime.now()) + " WARNING: cannot send figure to slack"
         return result
     
     def delete_last_figure(fid):
-        result = subprocess.check_output("curl -F token=%s -F file=%s https://slack.com/api/files.delete" % (BOT_TOKEN, fid), shell=True)
-        assert re.search(r'"ok":true', result), "cannot delete last figure: %s" % result
+        try:
+            result = subprocess.check_output("curl -F token=%s -F file=%s https://slack.com/api/files.delete" % (BOT_TOKEN, fid), shell=True)
+        except subprocess.CalledProcessError:
+            raise AssertionError(str(datetime.now()) + " WARNING: cannot delete last figure")
+        assert re.search(r'"ok":true', result), str(datetime.now()) + " WARNING: cannot delete last figure: %s" % result
 
     def get_file_id(result):
         targetline = re.search(r'"id":"\w+"', result).group()
