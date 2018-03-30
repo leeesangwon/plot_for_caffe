@@ -1,4 +1,10 @@
 """
+Plot graph from caffe output log.
+It can send figure and optimization done message to your slack messanger.
+
+To plot graph, caffe output log is parsed by regular expression.
+The regular expression is defiined at plot() function.
+
 If you want to use slack alert,
 you must make 'slack_setup.bin' file.
 You can make the file using 
@@ -130,6 +136,9 @@ class SlackHandler(object):
             self.bot_token, self.channel = pickle.load(f)
     
     def set_info_to_setup_file(self, bot_token, channel):
+        '''
+        make slack_setup.bin file.
+        '''
         with open(self.setup_file, 'wb') as f:
             pickle.dump((bot_token, channel), f)
     
@@ -190,6 +199,11 @@ class SlackHandler(object):
 
 
 class LineColorCycler(object):
+    """
+    Choose matplotlib line color automatically.
+    There are 10 colors; C0 to C9.
+    After using C9, It use C0.
+    """
     def __init__(self):
         self.__num_of_colors = 10
         self.__color_list = ['C%s' % i for i in range(self.__num_of_colors)]
