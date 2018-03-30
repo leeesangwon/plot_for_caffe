@@ -1,17 +1,20 @@
+"""
+If you want to use slack alert,
+you must make 'slack_setup.bin' file.
+You can make the file using 
+SlackHandler.set_info_to_setup_file('your bot token', 'your channel')
+"""
 from __future__ import print_function 
 
 import sys, os
 import re, argparse, subprocess
 from datetime import datetime, timedelta
-import logging
+import logging, pickle
 
 from matplotlib import pyplot as plt
 from matplotlib import animation
 from matplotlib import style
 
-# for slackbot
-CHANNEL = 'change to your channel'
-BOT_TOKEN = "change to your bot token"
 
 LOSS_MIN = 0.1
 LOSS_MAX = 0.3
@@ -115,13 +118,21 @@ class Line(object):
 
 
 class SlackHandler(object):
-    def __init__(self, slack_alert, bot_token, channel):
+    def __init__(self, slack_alert):
         self.is_active = bool(slack_alert)
         self.alert_interval = slack_alert
-        self.bot_token = bot_token
-        self.channel = channel
+        self.setup_file = "slack_setup.bin"
+        self.get_info_from_setup_file()
         self.last_fid = None
-
+    
+    def get_info_from_setup_file(self):
+        with open(self.setup_file, 'rb') as f:
+            self.bot_token, self.channel = pickle.load(f)
+    
+    def set_info_to_setup_file(self, bot_token, channel):
+        with open(self.setup_file, 'wb') as f:
+            pickle.dump((bot_token, channel), f)
+    
     def deactivate(self):
         self.is_active = False
 
@@ -232,7 +243,7 @@ def plot(log_file_path, comparision_log_file_path, graph_title, slack_alert, aut
 
     plot_comparision(subplot_dict, comparision_log_file_path, label_header="comp_")
     setup_legend(subplot_dict)
-    slack_handler = SlackHandler(slack_alert, BOT_TOKEN, CHANNEL)
+    slack_handler = SlackHandler(slack_alert)
 
     def plot_iteratively():
         def animate(frame):
