@@ -172,7 +172,10 @@ class SlackHandler(object):
         result = _send_image(title, image_path)
         if self.last_fid is not None:
             _delete_last_image(self.last_fid)
-        self.last_fid = _get_file_id(result)
+        try:
+            self.last_fid = _get_file_id(result)
+        except:
+            logger.warning("cannot send image to slack")
 
 
 class LineColorCycler(object):
