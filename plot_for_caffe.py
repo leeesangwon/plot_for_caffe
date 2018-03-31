@@ -332,7 +332,7 @@ def setup_legend(subplot_dict):
 
 def is_optimization_done(log_file_path):
     log_file_parser = LogFileParser(log_file_parser)
-    if log_file_parser.find(r"Optimization Done.")
+    if log_file_parser.find(r"Optimization Done."):
         return True
     return False
 
