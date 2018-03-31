@@ -126,7 +126,7 @@ class LogFileParser(object):
     
     def find(self, regex):
         regex = re.compile(regex)
-        return regex.search(self.logs):
+        return regex.search(self.logs)
         
     def parse_to_list(self, regex):
         '''
