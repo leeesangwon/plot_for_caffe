@@ -95,11 +95,10 @@ class Subplot(object):
 
 class Line(object):
     def __init__(self, plot, log_file_path, x_regex, y_regex, x_mult=1, y_mult=1, line_type=None, label=None):
-        
-        self.log_file_path = log_file_path
-        self.__update_logs()
-        self.x_regex = re.compile(x_regex)
-        self.y_regex = re.compile(y_regex)
+        self.log_file_parser = LogFileParser(log_file_path)
+        self.log_file_parser.update_logs()
+        self.x_regex = x_regex
+        self.y_regex = y_regex
         self.x_mult = x_mult
         self.y_mult = y_mult
         self.line_type = line_type
@@ -107,26 +106,33 @@ class Line(object):
         self.plot = plot
 
     def draw(self):
-        self.__update_logs()
-        x_list = self.__parse_to_list(self.logs, self.x_regex)
-        y_list = self.__parse_to_list(self.logs, self.y_regex)
+        self.log_file_parser.update_logs()
+        x_list = self.log_file_parser.parse_to_list(self.x_regex)
+        y_list = self.log_file_parser.parse_to_list(self.y_regex)
         x_list = [x*self.x_mult for x in x_list]
         y_list = [y*self.y_mult for y in y_list]
         assert len(x_list) == len(y_list), "length of x(%s) != length of y(%s)" % (len(x_list), len(y_list))
         self.plot.set_data(x_list, y_list)
-    
-    def __update_logs(self):
-        with open(self.log_file_path, 'r') as log_file:
-            self.logs = log_file.read()
 
-    def __parse_to_list(self, logs, regex):
-        regex_iter = regex.finditer(logs)
+
+class LogFileParser(object):
+    def __init__(self, log_file_path):
+        self.log_file_path = log_file_path
+        self.update_logs()
+    
+    def update_logs(self):
+        with open(self.log_file_path, 'r') as f:
+            self.logs = f.read()
+    
+    def parse_to_list(self, regex):
+        regex = re.compile(regex)
+        regex_iter = regex.finditer(self.logs)
         return [self.__line_to_float(x.group()) for x in regex_iter]
 
     def __line_to_float(self, text):
         re_float_number = re.compile(r"[\d.]+(e[-+][\d]{2}){0,1}")
         return float(re_float_number.search(text).group())
-
+        
 
 class SlackHandler(object):
     def __init__(self, slack_alert):
