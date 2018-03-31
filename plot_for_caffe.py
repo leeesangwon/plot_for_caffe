@@ -237,9 +237,10 @@ class SlackHandler(object):
             logger.warning("cannot send image to slack")
 
 
-class RemainingTimePredicter(object):
+class TimeCalculator(object):
     def __init__(self, interval, max_step, log_file_path):
         self.stepdelta = 1000
+        self.datetime_format = "%Y-%m-%d %H:%M:%S"
         self.max_step = max_step
         self.interval = timedelta(minutes=interval)
         self.log_file_path = log_file_path
@@ -247,14 +248,23 @@ class RemainingTimePredicter(object):
     def estimate_remaining_time(self, current_step):
         current_step = int(current_step)
         last_step = current_step - self.stepdelta if current_step > self.stepdelta else 0
-        current_time = LogFileParser(self.log_file_path).time_of_n_th_step(current_step)
-        last_time = LogFileParser(self.log_file_path).time_of_n_th_step(last_step)
-        remaining_time = int(self.max_step-current_step) * (current_time-last_time) / int(current_step-last_step)
+        time_consumption = self.calculate_time_comsumption(last_step, current_step)
+        remaining_time = int((self.max_step - current_step) / (current_step - last_step)) * time_consumption
         return remaining_time
 
     def estimate_end_time(self, current_step):
-        return datetime.now() + self.estimate_remaining_time(current_step)
+        return (datetime.now() + self.estimate_remaining_time(current_step)).strftime(self.datetime_format)
 
+    def calculate_time_comsumption(self, start_step, end_step):
+        start_step = int(start_step)
+        end_step = int(end_step)
+        end_time = LogFileParser(self.log_file_path).time_of_n_th_step(end_step)
+        start_time = LogFileParser(self.log_file_path).time_of_n_th_step(start_step)
+        return end_time - start_time
+
+    def get_start_time(self):
+        return LogFileParser(self.log_file_path).time_of_n_th_step(0).strftime(self.datetime_format)
+        
 
 class MinutesTimer(object):
     def __init__(self, interval):
@@ -330,16 +340,14 @@ def plot(log_file_path, comparision_log_file_path, graph_title, slack_alert, aut
     
     slack_handler = SlackHandler(slack_alert)
     n_minutes_timer = MinutesTimer(slack_handler.alert_interval)
-    remaining_time_predicter = RemainingTimePredicter(interval=slack_handler.alert_interval, max_step=STEP_MAX, log_file_path=log_file_path)
+    time_calc = TimeCalculator(interval=slack_handler.alert_interval, max_step=STEP_MAX, log_file_path=log_file_path)
 
     def plot_iteratively():
         def animate(frame):
             for _subplot in subplot_dict.values():
                 _subplot.target_line.draw()
             if slack_handler.is_active and n_minutes_timer.is_active():
-                latest_step = subplot_dict.values()[0].target_line.latest_x()
-                end_time = remaining_time_predicter.estimate_end_time(latest_step)
-                message = "It is likely to end at %s" % end_time
+                message = write_message_body(subplot_dict.values()[0], time_calc)
                 fig = plt.gcf()
                 slack_handler.send_figure(fig, graph_title, body=message)
             if is_optimization_done(log_file_path):
@@ -373,6 +381,17 @@ def plot_comparision(subplot_dict, comparision_log_file_path, label_header):
             _subplot.add_auxiliary_line(log_file_path=comparision_log_file_path, line_type=line_color_cycler() + '--', label_header=label_header)
             for line in _subplot.auxiliary_line_dict.values():
                 line.draw()
+
+
+def write_message_body(subplot, time_calc):
+    latest_step = subplot.target_line.latest_x()
+    start_time = time_calc.get_start_time()
+    end_time = time_calc.estimate_end_time(latest_step)
+    time_consumption = time_calc.calculate_time_comsumption(0, latest_step)
+    remaining_time = time_calc.estimate_remaining_time(latest_step)
+    message = "Started at\t%s\nWill end at\t%s\nConsumped\t%s\nRemain\t%s" \
+                % (start_time, end_time, time_consumption, remaining_time)
+    return message
 
 
 def setup_legend(subplot_dict):
