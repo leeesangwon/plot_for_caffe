@@ -158,6 +158,9 @@ class SlackHandler(object):
     def set_info_to_setup_file(self, bot_token, channel):
         '''
         make slack_setup.bin file.
+        Input
+            bot_token: your bot token issued from slack.
+            channel: name of the channel where your message would be uploaded.
         '''
         with open(self.setup_file, 'wb') as f:
             pickle.dump((bot_token, channel), f)
@@ -331,7 +334,7 @@ def setup_legend(subplot_dict):
 
 
 def is_optimization_done(log_file_path):
-    log_file_parser = LogFileParser(log_file_parser)
+    log_file_parser = LogFileParser(log_file_path)
     if log_file_parser.find(r"Optimization Done."):
         return True
     return False
