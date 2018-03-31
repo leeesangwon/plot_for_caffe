@@ -124,7 +124,16 @@ class LogFileParser(object):
         with open(self.log_file_path, 'r') as f:
             self.logs = f.read()
     
+    def find(self, regex):
+        regex = re.compile(regex)
+        return regex.search(self.logs):
+        
     def parse_to_list(self, regex):
+        '''
+        Find regex in the log file,
+        and extract only float number from regex result.
+        finally return list of float number.
+        '''
         regex = re.compile(regex)
         regex_iter = regex.finditer(self.logs)
         return [self.__line_to_float(x.group()) for x in regex_iter]
@@ -322,10 +331,8 @@ def setup_legend(subplot_dict):
 
 
 def is_optimization_done(log_file_path):
-    with open(log_file_path, 'r') as log_file:
-        logs = log_file.read()
-    re_optimization_done = re.compile(r"Optimization Done.")
-    if re_optimization_done.search(logs):
+    log_file_parser = LogFileParser(log_file_parser)
+    if log_file_parser.find(r"Optimization Done.")
         return True
     return False
 
