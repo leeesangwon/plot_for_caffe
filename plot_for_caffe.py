@@ -196,20 +196,20 @@ class SlackHandler(object):
             return result
         result = _send_message(title, body)
 
-    def send_figure(self, fig, graph_title):
+    def send_figure(self, fig, graph_title, body=''):
         temp_figure_image_name = "tmp_fig.png"
         fig.savefig(temp_figure_image_name)
         try:
-            self.send_image(graph_title, temp_figure_image_name)
+            self.send_image(graph_title, temp_figure_image_name, body)
         except AssertionError as e:
             print(e)
         os.remove(temp_figure_image_name)
 
-    def send_image(self, title, image_path):
-        def _send_image(title, image_path):
+    def send_image(self, title, image_path, body=''):
+        def _send_image(title, image_path, body=''):
             try:
-                result = subprocess.check_output("curl -F token=%s -F channels=#%s -F title='%s' -F file=@%s https://slack.com/api/files.upload"
-                                            % (self.bot_token, self.channel, title, image_path), stderr=subprocess.STDOUT, shell=True)
+                result = subprocess.check_output("curl -F token=%s -F channels=#%s -F title='%s' -F initial_comment='%s' -F file=@%s https://slack.com/api/files.upload"
+                                            % (self.bot_token, self.channel, title, body, image_path), stderr=subprocess.STDOUT, shell=True)
             except subprocess.CalledProcessError:
                 logger.warning("cannot send image to slack")
             if not re.search(r'"ok":true', result):
@@ -228,13 +228,44 @@ class SlackHandler(object):
             targetline = re.search(r'"id":"\w+"', result).group()
             return re.findall(r'\w+', targetline)[-1]
         
-        result = _send_image(title, image_path)
+        result = _send_image(title, image_path, body)
         if self.last_fid is not None:
             _delete_last_image(self.last_fid)
         try:
             self.last_fid = _get_file_id(result)
         except:
             logger.warning("cannot send image to slack")
+
+
+class RemainingTimePredicter(object):
+    def __init__(self, interval, max_step, log_file_path):
+        self.stepdelta = 1000
+        self.max_step = max_step
+        self.interval = timedelta(minutes=interval)
+        self.log_file_path = log_file_path
+    
+    def estimate_remaining_time(self, current_step):
+        current_step = int(current_step)
+        last_step = current_step - self.stepdelta if current_step > self.stepdelta else 0
+        current_time = LogFileParser(self.log_file_path).time_of_n_th_step(current_step)
+        last_time = LogFileParser(self.log_file_path).time_of_n_th_step(last_step)
+        remaining_time = int(self.max_step-current_step) * (current_time-last_time) / int(current_step-last_step)
+        return remaining_time
+
+    def estimate_end_time(self, current_step):
+        return datetime.now() + self.estimate_remaining_time(current_step)
+
+
+class MinutesTimer(object):
+    def __init__(self, interval):
+        self.interval = timedelta(minutes=interval)
+        self.time_to_go = datetime.now()
+    
+    def is_active(self):
+        if self.time_to_go < datetime.now():
+            self.time_to_go += self.interval
+            return True
+        return False
 
 
 class LineColorCycler(object):
@@ -307,10 +338,10 @@ def plot(log_file_path, comparision_log_file_path, graph_title, slack_alert, aut
                 _subplot.target_line.draw()
             if slack_handler.is_active and n_minutes_timer.is_active():
                 latest_step = subplot_dict.values()[0].target_line.latest_x()
-                end_time = remaining_time_predicter.calculate_end_time(latest_step)
+                end_time = remaining_time_predicter.estimate_end_time(latest_step)
                 message = "It is likely to end at %s" % end_time
                 fig = plt.gcf()
-                slack_handler.send_figure(fig, message)
+                slack_handler.send_figure(fig, graph_title, body=message)
             if is_optimization_done(log_file_path):
                 if slack_handler.is_active:
                     fig = plt.gcf()
@@ -360,37 +391,6 @@ def is_optimization_done(log_file_path):
     if log_file_parser.find(r"Optimization Done."):
         return True
     return False
-
-
-class RemainingTimePredicter(object):
-    def __init__(self, interval, max_step, log_file_path):
-        self.stepdelta = 1000
-        self.max_step = max_step
-        self.interval = timedelta(minutes=interval)
-        self.log_file_path = log_file_path
-    
-    def calculate_remaining_time(self, current_step):
-        current_step = int(current_step)
-        last_step = current_step - self.stepdelta if current_step > self.stepdelta else 0
-        current_time = LogFileParser(self.log_file_path).time_of_n_th_step(current_step)
-        last_time = LogFileParser(self.log_file_path).time_of_n_th_step(last_step)
-        remaining_time = int(self.max_step-current_step) * (current_time-last_time) / int(current_step-last_step)
-        return remaining_time
-
-    def calculate_end_time(self, current_step):
-        return datetime.now() + self.calculate_remaining_time(current_step)
-
-
-class MinutesTimer(object):
-    def __init__(self, interval):
-        self.interval = timedelta(minutes=interval)
-        self.time_to_go = datetime.now()
-    
-    def is_active(self):
-        if self.time_to_go < datetime.now():
-            self.time_to_go += self.interval
-            return True
-        return False
 
 
 if __name__=="__main__":
