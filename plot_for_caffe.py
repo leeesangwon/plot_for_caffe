@@ -95,11 +95,10 @@ class Subplot(object):
 
 class Line(object):
     def __init__(self, plot, log_file_path, x_regex, y_regex, x_mult=1, y_mult=1, line_type=None, label=None):
-        
-        self.log_file_path = log_file_path
-        self.__update_logs()
-        self.x_regex = re.compile(x_regex)
-        self.y_regex = re.compile(y_regex)
+        self.log_file_parser = LogFileParser(log_file_path)
+        self.log_file_parser.update_logs()
+        self.x_regex = x_regex
+        self.y_regex = y_regex
         self.x_mult = x_mult
         self.y_mult = y_mult
         self.line_type = line_type
@@ -107,26 +106,58 @@ class Line(object):
         self.plot = plot
 
     def draw(self):
-        self.__update_logs()
-        x_list = self.__parse_to_list(self.logs, self.x_regex)
-        y_list = self.__parse_to_list(self.logs, self.y_regex)
+        self.log_file_parser.update_logs()
+        x_list = self.log_file_parser.parse_to_list(self.x_regex)
+        y_list = self.log_file_parser.parse_to_list(self.y_regex)
         x_list = [x*self.x_mult for x in x_list]
         y_list = [y*self.y_mult for y in y_list]
         assert len(x_list) == len(y_list), "length of x(%s) != length of y(%s)" % (len(x_list), len(y_list))
         self.plot.set_data(x_list, y_list)
     
-    def __update_logs(self):
-        with open(self.log_file_path, 'r') as log_file:
-            self.logs = log_file.read()
+    def latest_x(self):
+        return self.log_file_parser.parse_to_list(self.x_regex)[-1]
 
-    def __parse_to_list(self, logs, regex):
-        regex_iter = regex.finditer(logs)
+
+class LogFileParser(object):
+    def __init__(self, log_file_path):
+        self.log_file_path = log_file_path
+        self.update_logs()
+    
+    def update_logs(self):
+        with open(self.log_file_path, 'r') as f:
+            self.logs = f.read()
+    
+    def find(self, regex):
+        self.update_logs()
+        regex = re.compile(regex)
+        return regex.search(self.logs)
+        
+    def parse_to_list(self, regex):
+        '''
+        Find regex in the log file,
+        and extract only float number from regex result.
+        finally return list of float number.
+        '''
+        self.update_logs()
+        regex = re.compile(regex)
+        regex_iter = regex.finditer(self.logs)
         return [self.__line_to_float(x.group()) for x in regex_iter]
 
     def __line_to_float(self, text):
         re_float_number = re.compile(r"[\d.]+(e[-+][\d]{2}){0,1}")
         return float(re_float_number.search(text).group())
-
+    
+    def time_of_n_th_step(self, step):
+        self.update_logs()
+        re_step = re.compile(r".* Iteration %s, loss" % step)
+        re_time = re.compile(r"\d{4} \d{2}:\d{2}:\d{2}")
+        raw_time = re_time.search(re_step.search(self.logs).group()).group()
+        step_time = datetime.strptime(raw_time, "%m%d %H:%M:%S")
+        step_time = step_time.replace(year=datetime.now().year)
+        if step_time > datetime.now():
+            step_time = datetime.replace(year=step_time.year-1)
+        return step_time
+        
 
 class SlackHandler(object):
     def __init__(self, slack_alert):
@@ -143,6 +174,9 @@ class SlackHandler(object):
     def set_info_to_setup_file(self, bot_token, channel):
         '''
         make slack_setup.bin file.
+        Input
+            bot_token: your bot token issued from slack.
+            channel: name of the channel where your message would be uploaded.
         '''
         with open(self.setup_file, 'wb') as f:
             pickle.dump((bot_token, channel), f)
@@ -174,7 +208,7 @@ class SlackHandler(object):
     def send_image(self, title, image_path):
         def _send_image(title, image_path):
             try:
-                result = subprocess.check_output("curl -F token=%s -F channels=#%s -F title=%s -F file=@%s https://slack.com/api/files.upload"
+                result = subprocess.check_output("curl -F token=%s -F channels=#%s -F title='%s' -F file=@%s https://slack.com/api/files.upload"
                                             % (self.bot_token, self.channel, title, image_path), stderr=subprocess.STDOUT, shell=True)
             except subprocess.CalledProcessError:
                 logger.warning("cannot send image to slack")
@@ -262,15 +296,21 @@ def plot(log_file_path, comparision_log_file_path, graph_title, slack_alert, aut
 
     plot_comparision(subplot_dict, comparision_log_file_path, label_header="comp_")
     setup_legend(subplot_dict)
+    
     slack_handler = SlackHandler(slack_alert)
+    n_minutes_timer = MinutesTimer(slack_handler.alert_interval)
+    remaining_time_predicter = RemainingTimePredicter(interval=slack_handler.alert_interval, max_step=STEP_MAX, log_file_path=log_file_path)
 
     def plot_iteratively():
         def animate(frame):
             for _subplot in subplot_dict.values():
                 _subplot.target_line.draw()
-            if slack_handler.is_active and n_minutes_timer(slack_handler.alert_interval):
+            if slack_handler.is_active and n_minutes_timer.is_active():
+                latest_step = subplot_dict.values()[0].target_line.latest_x()
+                end_time = remaining_time_predicter.calculate_end_time(latest_step)
+                message = "It is likely to end at %s" % end_time
                 fig = plt.gcf()
-                slack_handler.send_figure(fig, graph_title)
+                slack_handler.send_figure(fig, message)
             if is_optimization_done(log_file_path):
                 if slack_handler.is_active:
                     fig = plt.gcf()
@@ -316,23 +356,41 @@ def setup_legend(subplot_dict):
 
 
 def is_optimization_done(log_file_path):
-    with open(log_file_path, 'r') as log_file:
-        logs = log_file.read()
-    re_optimization_done = re.compile(r"Optimization Done.")
-    if re_optimization_done.search(logs):
+    log_file_parser = LogFileParser(log_file_path)
+    if log_file_parser.find(r"Optimization Done."):
         return True
     return False
 
 
-def n_minutes_timer(n):
-    try:
-        is_time_to_go = n_minutes_timer.time_to_go < datetime.now()
-    except AttributeError:
-        n_minutes_timer.time_to_go = datetime.now()
-        is_time_to_go = True
-    if is_time_to_go:
-        n_minutes_timer.time_to_go += timedelta(minutes=n)
-    return is_time_to_go
+class RemainingTimePredicter(object):
+    def __init__(self, interval, max_step, log_file_path):
+        self.stepdelta = 1000
+        self.max_step = max_step
+        self.interval = timedelta(minutes=interval)
+        self.log_file_path = log_file_path
+    
+    def calculate_remaining_time(self, current_step):
+        current_step = int(current_step)
+        last_step = current_step - self.stepdelta if current_step > self.stepdelta else 0
+        current_time = LogFileParser(self.log_file_path).time_of_n_th_step(current_step)
+        last_time = LogFileParser(self.log_file_path).time_of_n_th_step(last_step)
+        remaining_time = int(self.max_step-current_step) * (current_time-last_time) / int(current_step-last_step)
+        return remaining_time
+
+    def calculate_end_time(self, current_step):
+        return datetime.now() + self.calculate_remaining_time(current_step)
+
+
+class MinutesTimer(object):
+    def __init__(self, interval):
+        self.interval = timedelta(minutes=interval)
+        self.time_to_go = datetime.now()
+    
+    def is_active(self):
+        if self.time_to_go < datetime.now():
+            self.time_to_go += self.interval
+            return True
+        return False
 
 
 if __name__=="__main__":
