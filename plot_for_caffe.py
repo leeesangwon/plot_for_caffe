@@ -113,6 +113,9 @@ class Line(object):
         y_list = [y*self.y_mult for y in y_list]
         assert len(x_list) == len(y_list), "length of x(%s) != length of y(%s)" % (len(x_list), len(y_list))
         self.plot.set_data(x_list, y_list)
+    
+    def latest_x(self):
+        return self.log_file_parser.parse_to_list(self.x_regex)[-1]
 
 
 class LogFileParser(object):
@@ -125,6 +128,7 @@ class LogFileParser(object):
             self.logs = f.read()
     
     def find(self, regex):
+        self.update_logs()
         regex = re.compile(regex)
         return regex.search(self.logs)
         
@@ -134,6 +138,7 @@ class LogFileParser(object):
         and extract only float number from regex result.
         finally return list of float number.
         '''
+        self.update_logs()
         regex = re.compile(regex)
         regex_iter = regex.finditer(self.logs)
         return [self.__line_to_float(x.group()) for x in regex_iter]
@@ -141,6 +146,17 @@ class LogFileParser(object):
     def __line_to_float(self, text):
         re_float_number = re.compile(r"[\d.]+(e[-+][\d]{2}){0,1}")
         return float(re_float_number.search(text).group())
+    
+    def time_of_n_th_step(self, step):
+        self.update_logs()
+        re_step = re.compile(r".* Iteration %s, loss" % step)
+        re_time = re.compile(r"\d{4} \d{2}:\d{2}:\d{2}")
+        raw_time = re_time.search(re_step.search(self.logs).group()).group()
+        step_time = datetime.strptime(raw_time, "%m%d %H:%M:%S")
+        step_time = step_time.replace(year=datetime.now().year)
+        if step_time > datetime.now():
+            step_time = datetime.replace(year=step_time.year-1)
+        return step_time
         
 
 class SlackHandler(object):
@@ -192,7 +208,7 @@ class SlackHandler(object):
     def send_image(self, title, image_path):
         def _send_image(title, image_path):
             try:
-                result = subprocess.check_output("curl -F token=%s -F channels=#%s -F title=%s -F file=@%s https://slack.com/api/files.upload"
+                result = subprocess.check_output("curl -F token=%s -F channels=#%s -F title='%s' -F file=@%s https://slack.com/api/files.upload"
                                             % (self.bot_token, self.channel, title, image_path), stderr=subprocess.STDOUT, shell=True)
             except subprocess.CalledProcessError:
                 logger.warning("cannot send image to slack")
@@ -280,15 +296,21 @@ def plot(log_file_path, comparision_log_file_path, graph_title, slack_alert, aut
 
     plot_comparision(subplot_dict, comparision_log_file_path, label_header="comp_")
     setup_legend(subplot_dict)
+    
     slack_handler = SlackHandler(slack_alert)
+    n_minutes_timer = MinutesTimer(slack_handler.alert_interval)
+    remaining_time_predicter = RemainingTimePredicter(interval=slack_handler.alert_interval, max_step=STEP_MAX, log_file_path=log_file_path)
 
     def plot_iteratively():
         def animate(frame):
             for _subplot in subplot_dict.values():
                 _subplot.target_line.draw()
-            if slack_handler.is_active and n_minutes_timer(slack_handler.alert_interval):
+            if slack_handler.is_active and n_minutes_timer.is_active():
+                latest_step = subplot_dict.values()[0].target_line.latest_x()
+                end_time = remaining_time_predicter.calculate_end_time(latest_step)
+                message = "It is likely to end at %s" % end_time
                 fig = plt.gcf()
-                slack_handler.send_figure(fig, graph_title)
+                slack_handler.send_figure(fig, message)
             if is_optimization_done(log_file_path):
                 if slack_handler.is_active:
                     fig = plt.gcf()
@@ -340,15 +362,35 @@ def is_optimization_done(log_file_path):
     return False
 
 
-def n_minutes_timer(n):
-    try:
-        is_time_to_go = n_minutes_timer.time_to_go < datetime.now()
-    except AttributeError:
-        n_minutes_timer.time_to_go = datetime.now()
-        is_time_to_go = True
-    if is_time_to_go:
-        n_minutes_timer.time_to_go += timedelta(minutes=n)
-    return is_time_to_go
+class RemainingTimePredicter(object):
+    def __init__(self, interval, max_step, log_file_path):
+        self.stepdelta = 1000
+        self.max_step = max_step
+        self.interval = timedelta(minutes=interval)
+        self.log_file_path = log_file_path
+    
+    def calculate_remaining_time(self, current_step):
+        current_step = int(current_step)
+        last_step = current_step - self.stepdelta if current_step > self.stepdelta else 0
+        current_time = LogFileParser(self.log_file_path).time_of_n_th_step(current_step)
+        last_time = LogFileParser(self.log_file_path).time_of_n_th_step(last_step)
+        remaining_time = int(self.max_step-current_step) * (current_time-last_time) / int(current_step-last_step)
+        return remaining_time
+
+    def calculate_end_time(self, current_step):
+        return datetime.now() + self.calculate_remaining_time(current_step)
+
+
+class MinutesTimer(object):
+    def __init__(self, interval):
+        self.interval = timedelta(minutes=interval)
+        self.time_to_go = datetime.now()
+    
+    def is_active(self):
+        if self.time_to_go < datetime.now():
+            self.time_to_go += self.interval
+            return True
+        return False
 
 
 if __name__=="__main__":
