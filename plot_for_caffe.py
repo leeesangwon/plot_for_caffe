@@ -95,9 +95,9 @@ class Subplot(object):
 
 class Line(object):
     def __init__(self, plot, log_file_path, x_regex, y_regex, x_mult=1, y_mult=1, line_type=None, label=None):
-        with open(log_file_path, 'r') as log_file:
-            logs = log_file.read()
-        self.logs = logs
+        
+        self.log_file_path = log_file_path
+        self.__update_logs()
         self.x_regex = re.compile(x_regex)
         self.y_regex = re.compile(y_regex)
         self.x_mult = x_mult
@@ -107,6 +107,7 @@ class Line(object):
         self.plot = plot
 
     def draw(self):
+        self.__update_logs()
         x_list = self.__parse_to_list(self.logs, self.x_regex)
         y_list = self.__parse_to_list(self.logs, self.y_regex)
         x_list = [x*self.x_mult for x in x_list]
@@ -114,6 +115,10 @@ class Line(object):
         assert len(x_list) == len(y_list), "length of x(%s) != length of y(%s)" % (len(x_list), len(y_list))
         self.plot.set_data(x_list, y_list)
     
+    def __update_logs(self):
+        with open(self.log_file_path, 'r') as log_file:
+            self.logs = log_file.read()
+
     def __parse_to_list(self, logs, regex):
         regex_iter = regex.finditer(logs)
         return [self.__line_to_float(x.group()) for x in regex_iter]
