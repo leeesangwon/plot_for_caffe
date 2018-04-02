@@ -191,8 +191,10 @@ class SlackHandler(object):
                                             % (self.bot_token, self.channel, title, body), stderr=subprocess.STDOUT, shell=True)
             except subprocess.CalledProcessError:
                 logger.warning("cannot send message to slack")
-            if not re.search(r'"ok":true', result):
-                logger.warning("cannot send message to slack")
+                result = ''
+            else:
+                if not re.search(r'"ok":true', result):
+                    logger.warning("cannot send message to slack")
             return result
         result = _send_message(title, body)
 
@@ -212,8 +214,10 @@ class SlackHandler(object):
                                             % (self.bot_token, self.channel, title, body, image_path), stderr=subprocess.STDOUT, shell=True)
             except subprocess.CalledProcessError:
                 logger.warning("cannot send image to slack")
-            if not re.search(r'"ok":true', result):
-                logger.warning("cannot send image to slack")
+                result = ''
+            else:
+                if not re.search(r'"ok":true', result):
+                    logger.warning("cannot send image to slack")
             return result
         
         def _delete_last_image(fid):
@@ -221,8 +225,11 @@ class SlackHandler(object):
                 result = subprocess.check_output("curl -F token=%s -F file=%s https://slack.com/api/files.delete" % (self.bot_token, fid), shell=True)
             except subprocess.CalledProcessError:
                 logger.warning("cannot delete last image")
-            if not re.search(r'"ok":true', result):
-                logger.warning("cannot delete last image: '%s'" % result)
+                result = ''
+            else:
+                if not re.search(r'"ok":true', result):
+                    logger.warning("cannot delete last image: '%s'" % result)
+            return result
 
         def _get_file_id(result):
             targetline = re.search(r'"id":"\w+"', result).group()
