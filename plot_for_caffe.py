@@ -22,9 +22,9 @@ from matplotlib import animation
 from matplotlib import style
 
 
-LOSS_MIN = 0.1
-LOSS_MAX = 0.3
-STEP_MAX = 90000
+LOSS_MIN = 1.5
+LOSS_MAX = 6
+STEP_MAX = 120000
 LR_MULT = 10000 # learning rate multiplyer
 
 logger = logging.getLogger('')
@@ -176,6 +176,7 @@ class SlackHandler(object):
                 pass
             else:
                 raise e
+
     
     def set_info_to_setup_file(self, bot_token, channel):
         '''
@@ -342,8 +343,8 @@ def plot(log_file_path, comparision_log_file_path, graph_title, slack_alert, aut
     subplot_dict = dict()
     subplot_dict['loss'] = Subplot(fig=fig, xlabel="iteration", xmax=STEP_MAX, ylabel="loss", ymin=LOSS_MIN, ymax=LOSS_MAX, 
                             x_regex=r"Iteration [\d]+, loss", y_regex=r", loss = [\d.]+(e[-+][\d]{2}){0,1}")
-    subplot_dict['lr'] = Subplot(ax=subplot_dict['loss'].ax, y_mult=lr_mult, ylabel='lr', ymin=0, ymax=1, 
-                            x_regex=r"Iteration [\d]+, lr", y_regex=r"lr = [\d.]+(e[-+][\d]{2}){0,1}")
+    subplot_dict['eval'] = Subplot(ax=subplot_dict['loss'].ax, xmax=STEP_MAX, ylabel='eval', ymin=0.65, ymax=0.85, 
+                            x_regex=r"Iteration [\d]+, Testing net", y_regex=r"detection_eval = [\d.]+(e[-+][\d]{2}){0,1}")
     
     for _subplot in subplot_dict.values():
         _subplot.init_target_line(log_file_path=log_file_path, line_type=line_color_cycler())
