@@ -111,7 +111,12 @@ class Line(object):
         y_list = self.log_file_parser.parse_to_list(self.y_regex)
         x_list = [x*self.x_mult for x in x_list]
         y_list = [y*self.y_mult for y in y_list]
-        assert len(x_list) == len(y_list), "length of x(%s) != length of y(%s)" % (len(x_list), len(y_list))
+        if len(x_list) in [len(y_list), len(y_list)+1, len(y_list)-1]:
+            min_len = len(x_list) if len(x_list) < len(y_list) else len(y_list)
+            x_list = x_list[:min_len]
+            y_list = y_list[:min_len]
+        else:
+            raise ValueError("length of x(%s) != length of y(%s)" % (len(x_list), len(y_list)))
         self.plot.set_data(x_list, y_list)
     
     def latest_x(self):
