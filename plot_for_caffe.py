@@ -86,11 +86,11 @@ class Subplot(object):
         self.auxiliary_line_dict[label] = Line(plot_, log_file_path, self.x_regex, self.y_regex, self.x_mult, self.y_mult, line_type, label)
     
     def get_all_lines(self):
-        lines = [self.target_line] + self.auxiliary_line_dict.values()
+        lines = [self.target_line] + list(self.auxiliary_line_dict.values())
         return [x.plot for x in lines]
     
     def get_all_labels(self):
-        return [self.target_label] + self.auxiliary_line_dict.keys()
+        return [self.target_label] + list(self.auxiliary_line_dict.keys())
 
 
 class Line(object):
@@ -173,8 +173,14 @@ class SlackHandler(object):
         self.last_fid = None
     
     def get_info_from_setup_file(self):
-        with open(self.setup_file, 'rb') as f:
-            self.bot_token, self.channel = pickle.load(f)
+        try:
+            with open(self.setup_file, 'rb') as f:
+                self.bot_token, self.channel = pickle.load(f)
+        except FileNotFoundError as e:
+            if not self.is_active:
+                pass
+            else:
+                raise e
     
     def set_info_to_setup_file(self, bot_token, channel):
         '''
